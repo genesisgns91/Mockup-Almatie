@@ -1,4 +1,4 @@
-export default function ControlsPanel({ art, setArt, background, setBackground, mugColor, setMugColor, mugCount, setMugCount, warning }) {
+export default function ControlsPanel({ art, setArt, background, setBackground, mugColors, setMugColors, mugCount, setMugCount, warning }) {
   const handleArtUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -41,6 +41,15 @@ export default function ControlsPanel({ art, setArt, background, setBackground, 
               onChange={() => setMugCount(2)}
             />
             2 canecas
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="mugcount"
+              checked={mugCount === 3}
+              onChange={() => setMugCount(3)}
+            />
+            3 canecas
           </label>
         </div>
       </section>
@@ -152,8 +161,37 @@ export default function ControlsPanel({ art, setArt, background, setBackground, 
       </section>
 
       <section>
-        <h2>Cor da caneca</h2>
-        <input type="color" value={mugColor} onChange={(e) => setMugColor(e.target.value)} />
+        <h2>Cores da caneca</h2>
+        <div className="grid-3">
+          <label>
+            Corpo (externa)
+            <input
+              type="color"
+              value={mugColors.body}
+              onChange={(e) => setMugColors((c) => ({ ...c, body: e.target.value }))}
+            />
+          </label>
+          <label>
+            Alça
+            <input
+              type="color"
+              value={mugColors.handle}
+              onChange={(e) => setMugColors((c) => ({ ...c, handle: e.target.value }))}
+            />
+          </label>
+          <label>
+            Interna
+            <input
+              type="color"
+              value={mugColors.inside}
+              onChange={(e) => setMugColors((c) => ({ ...c, inside: e.target.value }))}
+            />
+          </label>
+        </div>
+        <p className="hint">
+          O corpo também define a cor de fundo por trás da sua arte (áreas onde não há arte
+          impressa).
+        </p>
       </section>
     </aside>
   )

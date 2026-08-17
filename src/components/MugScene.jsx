@@ -40,15 +40,28 @@ const TARGET_HEIGHT = 1.7 // world units a single mug's height should occupy
 const MODEL_URLS = {
   1: '/model.obj',
   2: '/model-duo.obj',
+  3: '/model-trio.obj',
 }
 
-// Object names in both OBJ files follow the pattern "<part>" and "<part>.001"
-// for the second mug in the two-mug file. Strip the suffix to find the part.
+// Shared "ceramic" PBR tuning used for every part of the mug (body, handle,
+// inside, print). Kept fairly matte (moderate roughness, modest clearcoat,
+// restrained envMapIntensity) so white ceramic reads as white under the
+// HDRI instead of picking up dark environment reflections.
+const CERAMIC_PARAMS = {
+  metalness: 0.0,
+  clearcoat: 0.7,
+  clearcoatRoughness: 0.3,
+  envMapIntensity: 0.5,
+}
+
+// Object names in the OBJ files follow the pattern "<part>" and "<part>.001"
+// (and "<part>.002" for the third mug in the trio file). Strip the suffix to
+// find the part.
 function baseName(name) {
   return name.replace(/\.\d+$/, '')
 }
 
-function Mug({ art, mugColor, mugCount, onFrame }) {
+function Mug({ art, mugColors, mugCount, onFrame }) {
   const obj = useLoader(OBJLoader, MODEL_URLS[mugCount] || MODEL_URLS[1])
   const group = useMemo(() => obj.clone(true), [obj])
   const [measurements, setMeasurements] = useState(null)
@@ -71,15 +84,20 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
 
   useEffect(() => {
     const bodyMaterial = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(mugColor),
-      roughness: 0.22,
-      metalness: 0.0,
-      clearcoat: 1,
-      clearcoatRoughness: 0.15,
-      envMapIntensity: 1.1,
+      color: new THREE.Color(mugColors.body),
+      roughness: 0.42,
+      ...CERAMIC_PARAMS,
     })
-    const insideMaterial = bodyMaterial.clone()
-    insideMaterial.roughness = 0.28
+    const insideMaterial = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(mugColors.inside),
+      roughness: 0.48,
+      ...CERAMIC_PARAMS,
+    })
+    const handleMaterial = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(mugColors.handle),
+      roughness: 0.42,
+      ...CERAMIC_PARAMS,
+    })
 
     let printRadiusUnits = null
     let printHeightUnits = null
@@ -100,22 +118,47 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
 
       if (name === 'inside') {
         child.material = insideMaterial
+      } else if (name === 'handle') {
+        child.material = handleMaterial
       } else if (name === 'decal') {
         // Legacy single-mug file has a redundant "decal" shell identical to
         // "print" — hide it, the artwork now paints directly onto "print".
         child.visible = false
+      } else if (name !== 'print' && name.startsWith('print')) {
+        // Leftover Blender alignment quads from the trio model (e.g.
+        // "printA", "printB") that duplicate/overlap the real "print"
+        // shells — never rendered, same treatment as the legacy "decal" shell.
+        child.visible = false
       } else if (name === 'print') {
         if (printRadiusUnits === null) {
+          // IMPORTANT: in the 2- and 3-mug models each mug's geometry is
+          // baked at its own offset position in the file (there's no
+          // per-object transform, the multi-mug layout is baked directly
+          // into the vertex coordinates). So the radius must be measured
+          // from THIS mesh's own center, not from the world origin —
+          // otherwise mugs positioned away from the origin get a wildly
+          // inflated "radius" (distance-to-origin instead of distance-to-
+          // own-axis), which under-scales the artwork on the canvas and
+          // makes it wrap only partway around the mug.
           const pos = child.geometry.attributes.position
           let minY = Infinity
           let maxY = -Infinity
-          let rSum = 0
+          let sumX = 0
+          let sumZ = 0
           for (let i = 0; i < pos.count; i++) {
-            const x = pos.getX(i)
             const y = pos.getY(i)
-            const z = pos.getZ(i)
             if (y < minY) minY = y
             if (y > maxY) maxY = y
+            sumX += pos.getX(i)
+            sumZ += pos.getZ(i)
+          }
+          const centerX = sumX / pos.count
+          const centerZ = sumZ / pos.count
+
+          let rSum = 0
+          for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i) - centerX
+            const z = pos.getZ(i) - centerZ
             rSum += Math.hypot(x, z)
           }
           printRadiusUnits = rSum / pos.count
@@ -123,6 +166,7 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
         }
         // material assigned in the texture effect below
       } else {
+        // "other" and "bottom" share the body's ceramic color.
         child.material = bodyMaterial
       }
     })
@@ -134,8 +178,9 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
     return () => {
       bodyMaterial.dispose()
       insideMaterial.dispose()
+      handleMaterial.dispose()
     }
-  }, [group, mugColor])
+  }, [group, mugColors.body, mugColors.inside, mugColors.handle])
 
   const { texture, warning } = useDecalTexture({
     artImage: art.image,
@@ -146,6 +191,7 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
     mugRadiusUnits: measurements?.radiusUnits,
     mugHeightUnits: measurements?.heightUnits,
     mugRealHeightMM: art.mugRealHeightMM,
+    baseColor: mugColors.body,
   })
 
   useEffect(() => {
@@ -154,13 +200,14 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
 
   useEffect(() => {
     if (!texture) return
+    // Color stays neutral white here: the ceramic body color is already
+    // baked into the canvas texture itself (see useDecalTexture), so the
+    // "print" mesh always shows the right color even without artwork.
     const printMaterial = new THREE.MeshPhysicalMaterial({
       map: texture,
-      roughness: 0.28,
-      metalness: 0.0,
-      clearcoat: 1,
-      clearcoatRoughness: 0.15,
-      envMapIntensity: 1.1,
+      color: new THREE.Color(0xffffff),
+      roughness: 0.42,
+      ...CERAMIC_PARAMS,
     })
     group.traverse((child) => {
       if (child.isMesh && baseName(child.name) === 'print') {
@@ -177,7 +224,7 @@ function Mug({ art, mugColor, mugCount, onFrame }) {
 const ROTATE_SECONDS = 6
 
 // Points the camera at the loaded model and pulls it back just enough that
-// the whole thing (1 or 2 mugs, any width) fits comfortably in view.
+// the whole thing (1, 2 or 3 mugs, any width) fits comfortably in view.
 function CameraRig({ frame }) {
   const { camera, size, controls } = useThree()
 
@@ -273,7 +320,7 @@ function CaptureRig({ registerApi, spinTargetRef }) {
   return null
 }
 
-export default function MugScene({ art, background, mugColor, mugCount, registerApi, spinTargetRef }) {
+export default function MugScene({ art, background, mugColors, mugCount, registerApi, spinTargetRef }) {
   const [frame, setFrame] = useState(null)
 
   return (
@@ -284,10 +331,10 @@ export default function MugScene({ art, background, mugColor, mugCount, register
       gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, preserveDrawingBuffer: true }}
     >
       <SceneBackground background={background} />
-      <ambientLight intensity={0.35} />
+      <ambientLight intensity={0.55} />
       <directionalLight
         position={[3, 5, 2]}
-        intensity={1.4}
+        intensity={1.6}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -296,10 +343,10 @@ export default function MugScene({ art, background, mugColor, mugCount, register
         shadow-camera-top={1.5}
         shadow-camera-bottom={-1.5}
       />
-      <directionalLight position={[-3, 2, -2]} intensity={0.4} />
-      <Environment preset="apartment" />
+      <directionalLight position={[-3, 2, -2]} intensity={0.5} />
+      <Environment preset="studio" />
       <group ref={spinTargetRef}>
-        <Mug art={art} mugColor={mugColor} mugCount={mugCount} onFrame={setFrame} />
+        <Mug art={art} mugColors={mugColors} mugCount={mugCount} onFrame={setFrame} />
       </group>
       <ContactShadows
         position={[0, 0, 0]}
