@@ -6,13 +6,21 @@ import * as THREE from 'three'
 const WRAP_PX = 2048
 
 /**
- * Builds a CanvasTexture for the mug's "decal" mesh.
+ * Builds a CanvasTexture for the mug's "decal"/"print" mesh.
  *
  * The decal mesh's UV goes u:0..1 around the full circumference and v:0..1
  * from the bottom rim to the top rim. The UV seam (u=0 / u=1) sits right
  * behind the handle attachment, so leaving the left/right edges of the
- * canvas transparent automatically hides the seam+gap behind the handle,
- * and the artwork is naturally centered on the side opposite the handle.
+ * canvas untouched by the artwork automatically hides the seam+gap behind
+ * the handle, and the artwork is naturally centered on the side opposite
+ * the handle.
+ *
+ * The canvas background is always filled with `baseColor` first (the mug's
+ * ceramic color) before the artwork is drawn on top. This is what makes the
+ * areas around/behind the artwork show up as ceramic-colored instead of
+ * black: the print mesh IS most of the mug's visible body, not just a thin
+ * decal strip, so it must always have an opaque, correctly colored canvas
+ * behind it — even when no artwork has been uploaded yet.
  *
  * @param {Object} params
  * @param {HTMLImageElement|null} params.artImage - uploaded artwork image
@@ -23,7 +31,7 @@ const WRAP_PX = 2048
  * @param {number} params.mugRadiusUnits - decal mesh radius in model units
  * @param {number} params.mugHeightUnits - decal mesh wall height in model units
  * @param {number} params.mugRealHeightMM - calibration: real wall height in mm
- * @param {string} params.bodyColor - ceramic base color behind transparent areas (not used, kept transparent)
+ * @param {string} params.baseColor - ceramic base color painted behind the artwork
  */
 export function useDecalTexture({
   artImage,
@@ -34,6 +42,7 @@ export function useDecalTexture({
   mugRadiusUnits,
   mugHeightUnits,
   mugRealHeightMM,
+  baseColor,
 }) {
   const canvasRef = useRef(null)
   const textureRef = useRef(null)
@@ -71,7 +80,12 @@ export function useDecalTexture({
     if (!canvas || !tex || !pxPerMM) return
 
     const ctx = canvas.getContext('2d')
+
+    // Always start with an opaque ceramic-colored background so the mug
+    // never shows black/transparent in areas without artwork.
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = baseColor || '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     if (!artImage) {
       tex.needsUpdate = true
@@ -110,7 +124,7 @@ export function useDecalTexture({
     ctx.restore()
 
     tex.needsUpdate = true
-  }, [artImage, artWidthMM, artHeightMM, offsetXMM, offsetYMM, pxPerMM, circumferenceMM])
+  }, [artImage, artWidthMM, artHeightMM, offsetXMM, offsetYMM, pxPerMM, circumferenceMM, baseColor])
 
   return { texture, circumferenceMM, wallHeightMM: mugRealHeightMM, warning }
 }
