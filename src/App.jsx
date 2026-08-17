@@ -30,7 +30,11 @@ export default function App() {
     image: null,
   })
 
-  const [mugColor, setMugColor] = useState('#ffffff')
+  const [mugColors, setMugColors] = useState({
+    body: '#ffffff',
+    handle: '#ffffff',
+    inside: '#ffffff',
+  })
   const [mugCount, setMugCount] = useState(1)
   const [warning, setWarning] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -82,8 +86,8 @@ export default function App() {
         setArt={setArt}
         background={background}
         setBackground={setBackground}
-        mugColor={mugColor}
-        setMugColor={setMugColor}
+        mugColors={mugColors}
+        setMugColors={setMugColors}
         mugCount={mugCount}
         setMugCount={setMugCount}
         warning={warning}
@@ -93,7 +97,7 @@ export default function App() {
           <MugScene
             art={{ ...art, onWarning: setWarning }}
             background={background}
-            mugColor={mugColor}
+            mugColors={mugColors}
             mugCount={mugCount}
             registerApi={registerApi}
             spinTargetRef={spinTargetRef}
